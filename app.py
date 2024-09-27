@@ -9,7 +9,13 @@ logging.basicConfig(level=logging.INFO)
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-def stream_chat(model, messages):
+if 'intel' not in st.session_state:
+    st.session_state.intel = ""
+
+if 'intel_disabled' not in st.session_state:
+    st.session_state.intel_disabled = False
+
+def stream_chat(model, messages, intel):
     try:
         llm = Ollama(model=model, request_timeout=120.0)
         resp = llm.stream_chat(messages)
@@ -18,11 +24,14 @@ def stream_chat(model, messages):
         for r in resp:
             response += r.delta
             response_placeholder.write(response)
-        logging.info(f"Model: {model}, Messages: {messages}, Response: {response}")
+        logging.info(f"Model: {model}, Intel: {intel}, Messages: {messages}, Response: {response}")
         return response
     except Exception as e:
         logging.error(f"Error during streaming: {str(e)}")
         raise e
+
+def disable():
+    st.session_state.intel_disabled = True
 
 def main():
     st.title("Comp Intel Exchange")
@@ -30,9 +39,19 @@ def main():
 
     model = "llama3.2:latest"
 
+    if intel_prompt := st.text_input("Copy Intel Here", disabled=st.session_state.intel_disabled, on_change=disable):
+        st.session_state.intel = intel_prompt
+        logging.info(f"Intel: {intel_prompt}")
+
     if prompt := st.chat_input("Your question"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
         logging.info(f"User input: {prompt}")
+
+        # If this is the first message, include the intel:
+        if not st.session_state.messages:
+            logging.info("First message, prepending with intel prompt.")
+            st.session_state.messages.append({"role": "user", "content": f"Information:\r\n\r\n{st.session_state.intel}\r\n\r\nQuestion:\r\n{prompt}"})
+        else:
+            st.session_state.messages.append({"role": "user", "content": prompt})
 
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
@@ -46,7 +65,8 @@ def main():
                 with st.spinner("Writing..."):
                     try:
                         messages = [ChatMessage(role=msg["role"], content=msg["content"]) for msg in st.session_state.messages]
-                        response_message = stream_chat(model, messages)
+                        intel = st.session_state.intel
+                        response_message = stream_chat(model, messages, intel)
                         duration = time.time() - start_time
                         response_message_with_duration = f"{response_message}\n\nDuration: {duration:.2f} seconds"
                         st.session_state.messages.append({"role": "assistant", "content": response_message_with_duration})
