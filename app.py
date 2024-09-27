@@ -9,13 +9,7 @@ logging.basicConfig(level=logging.INFO)
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-if 'intel' not in st.session_state:
-    st.session_state.intel = ""
-
-if 'intel_disabled' not in st.session_state:
-    st.session_state.intel_disabled = False
-
-def stream_chat(model, messages, intel):
+def stream_chat(model, messages):
     try:
         llm = Ollama(model=model, request_timeout=120.0)
         resp = llm.stream_chat(messages)
@@ -24,14 +18,17 @@ def stream_chat(model, messages, intel):
         for r in resp:
             response += r.delta
             response_placeholder.write(response)
-        logging.info(f"Model: {model}, Intel: {intel}, Messages: {messages}, Response: {response}")
+        logging.info(f"Model: {model}, Messages: {messages}, Response: {response}")
         return response
     except Exception as e:
         logging.error(f"Error during streaming: {str(e)}")
         raise e
 
-def disable():
-    st.session_state.intel_disabled = True
+def intel_input_change():
+    intel_prompt = st.session_state.intel_input_box
+    logging.info(f"Intel: {intel_prompt}")
+    st.session_state.messages.append({"role": "system", "content": f"Background Information:\r\n\r\n{intel_prompt}\r\n\r\n"})
+    st.session_state.intel_input_box = ""
 
 def main():
     st.title("Comp Intel Exchange")
@@ -39,25 +36,23 @@ def main():
 
     model = "llama3.2:latest"
 
-    if intel_prompt := st.sidebar.text_input("Copy Intel Here", disabled=st.session_state.intel_disabled, on_change=disable):
-        st.session_state.intel = intel_prompt
-        logging.info(f"Intel: {intel_prompt}")
+    st.sidebar.text_input("Copy Intel Here", key="intel_input_box", on_change=intel_input_change)
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            if message["role"] == "system":
+                st.write("(Memory Updated)")
+                st.sidebar.write(message["content"])
+            else:
+                st.write(message["content"])
 
     if prompt := st.chat_input("Your question"):
         logging.info(f"User input: {prompt}")
 
-        # If this is the first message, include the intel:
-        if not st.session_state.messages:
-            logging.info("First message, prepending with intel prompt.")
-            st.session_state.messages.append({"role": "system", "content": f"Background Information:\r\n\r\n{st.session_state.intel}\r\n\r\n"})
         st.session_state.messages.append({"role": "user", "content": prompt})
+        st.write(prompt)
 
-        for message in st.session_state.messages:
-            if message["role"] != "system":
-                with st.chat_message(message["role"]):
-                    st.write(message["content"])
-
-        if st.session_state.messages[-1]["role"] != "assistant":
+        if st.session_state.messages[-1]["role"] != "assistant" and st.session_state.messages[-1]["role"] != "system":
             with st.chat_message("assistant"):
                 start_time = time.time()
                 logging.info("Generating response")
@@ -65,12 +60,9 @@ def main():
                 with st.spinner("Writing..."):
                     try:
                         messages = [ChatMessage(role=msg["role"], content=msg["content"]) for msg in st.session_state.messages]
-                        intel = st.session_state.intel
-                        response_message = stream_chat(model, messages, intel)
+                        response_message = stream_chat(model, messages)
                         duration = time.time() - start_time
-                        response_message_with_duration = f"{response_message}\n\nDuration: {duration:.2f} seconds"
-                        st.session_state.messages.append({"role": "assistant", "content": response_message_with_duration})
-                        st.write(f"Duration: {duration:.2f} seconds")
+                        st.session_state.messages.append({"role": "assistant", "content": response_message})
                         logging.info(f"Response: {response_message}, Duration: {duration:.2f} s")
 
                     except Exception as e:
