@@ -39,7 +39,7 @@ def main():
 
     model = "llama3.2:latest"
 
-    if intel_prompt := st.text_input("Copy Intel Here", disabled=st.session_state.intel_disabled, on_change=disable):
+    if intel_prompt := st.sidebar.text_input("Copy Intel Here", disabled=st.session_state.intel_disabled, on_change=disable):
         st.session_state.intel = intel_prompt
         logging.info(f"Intel: {intel_prompt}")
 
@@ -49,13 +49,13 @@ def main():
         # If this is the first message, include the intel:
         if not st.session_state.messages:
             logging.info("First message, prepending with intel prompt.")
-            st.session_state.messages.append({"role": "user", "content": f"Information:\r\n\r\n{st.session_state.intel}\r\n\r\nQuestion:\r\n{prompt}"})
-        else:
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            st.session_state.messages.append({"role": "system", "content": f"Background Information:\r\n\r\n{st.session_state.intel}\r\n\r\n"})
+        st.session_state.messages.append({"role": "user", "content": prompt})
 
         for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.write(message["content"])
+            if message["role"] != "system":
+                with st.chat_message(message["role"]):
+                    st.write(message["content"])
 
         if st.session_state.messages[-1]["role"] != "assistant":
             with st.chat_message("assistant"):
