@@ -1,13 +1,22 @@
 import streamlit as st
+from datetime import datetime
 from llama_index.core.llms import ChatMessage
 import logging
 import time
+import requests
+from bs4 import BeautifulSoup
 from llama_index.llms.ollama import Ollama
 
 logging.basicConfig(level=logging.INFO)
 
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
+if 'intel_urls' not in st.session_state:
+    st.session_state.intel_urls = []
+
+if 'user_facing_messages' not in st.session_state:
+    st.session_state.user_facing_messages = []
+
+if 'real_messages' not in st.session_state:
+    st.session_state.real_messages = [{"role": "system", "content": f"You are an analyst who processes given information and makes inferences. Today's date is {"{:%B %d, %Y}".format(datetime.now())}."}]
 
 def stream_chat(model, messages):
     try:
@@ -24,51 +33,73 @@ def stream_chat(model, messages):
         logging.error(f"Error during streaming: {str(e)}")
         raise e
 
+def extract_text_from_url(url):
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, "html.parser")
+        text_content = " ".join([p.get_text() for p in soup.find_all("p")])
+        return text_content
+    except Exception as e:
+        st.error(f"Error occurred while scraping the URL: {e}")
+        return None
+
 def intel_input_change():
-    intel_prompt = st.session_state.intel_input_box
-    logging.info(f"Intel: {intel_prompt}")
-    st.session_state.messages.append({"role": "system", "content": f"Background Information:\r\n\r\n{intel_prompt}\r\n\r\n"})
+    intel_url = st.session_state.intel_input_box
+    logging.info(f"Intel: {intel_url}")
+    st.session_state.intel_urls.append(intel_url)
+    intel_prompt = extract_text_from_url(intel_url)
+    st.session_state.real_messages.append({"role": "user", "content": f"I would like you to brief yourself on information from {intel_url}. If you understand, please respond with today's date."})
+    st.session_state.real_messages.append({"role": "assistant", "content": f"I understand, and today's date is {"{:%B %d, %Y}".format(datetime.now())}."})
+    st.session_state.real_messages.append({"role": "user", "content": f"Information from {intel_url}:\r\n\r\n{intel_prompt}\r\n\r\nRetrieved on {datetime.now()}. Please summarize key information in a few brief sentences."})
+    st.session_state.user_facing_messages.append({"role": "system", "content": f"(Contents of {intel_url} retrieved and stored in the conversation)"})
     st.session_state.intel_input_box = ""
 
 def main():
-    st.title("Comp Intel Exchange")
     logging.info("App started")
 
-    model = "llama3.2:latest"
+    st.title("Comp Intel Exchange")
 
-    st.sidebar.text_input("Copy Intel Here", key="intel_input_box", on_change=intel_input_change)
+    version = "0.0.1-demo"
+    #model = "llama3.2:latest"
+    model = "llama3.1:latest"
 
-    for message in st.session_state.messages:
+    subtitle = f"Version: '{version}'\nModel: '{model}'"
+    st.code(subtitle)
+
+    st.sidebar.text_input("Copy URLs of Intel Here", key="intel_input_box", on_change=intel_input_change)
+    for intel_url in st.session_state.intel_urls:
+        st.sidebar.write(intel_url)
+
+    for message in st.session_state.user_facing_messages:
         with st.chat_message(message["role"]):
-            if message["role"] == "system":
-                st.write("(Memory Updated)")
-                st.sidebar.write(message["content"])
-            else:
-                st.write(message["content"])
+            st.write(message["content"])
 
     if prompt := st.chat_input("Your question"):
         logging.info(f"User input: {prompt}")
 
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.real_messages.append({"role": "user", "content": prompt})
+        st.session_state.user_facing_messages.append({"role": "user", "content": prompt})
         st.write(prompt)
 
-        if st.session_state.messages[-1]["role"] != "assistant" and st.session_state.messages[-1]["role"] != "system":
-            with st.chat_message("assistant"):
-                start_time = time.time()
-                logging.info("Generating response")
+    if st.session_state.real_messages and st.session_state.real_messages[-1]["role"] != "assistant" and st.session_state.real_messages[-1]["role"] != "system":
+        with st.chat_message("assistant"):
+            start_time = time.time()
+            logging.info("Generating response")
 
-                with st.spinner("Writing..."):
-                    try:
-                        messages = [ChatMessage(role=msg["role"], content=msg["content"]) for msg in st.session_state.messages]
-                        response_message = stream_chat(model, messages)
-                        duration = time.time() - start_time
-                        st.session_state.messages.append({"role": "assistant", "content": response_message})
-                        logging.info(f"Response: {response_message}, Duration: {duration:.2f} s")
+            with st.spinner("Writing..."):
+                try:
+                    messages = [ChatMessage(role=msg["role"], content=msg["content"]) for msg in st.session_state.real_messages]
+                    response_message = stream_chat(model, messages)
+                    duration = time.time() - start_time
+                    st.session_state.real_messages.append({"role": "assistant", "content": response_message})
+                    st.session_state.user_facing_messages.append({"role": "assistant", "content": response_message})
+                    logging.info(f"Response: {response_message}, Duration: {duration:.2f} s")
 
-                    except Exception as e:
-                        st.session_state.messages.append({"role": "assistant", "content": str(e)})
-                        st.error("An error occurred while generating the response.")
-                        logging.error(f"Error: {str(e)}")
+                except Exception as e:
+                    st.session_state.real_messages.append({"role": "assistant", "content": str(e)})
+                    st.session_state.user_facing_messages.append({"role": "assistant", "content": str(e)})
+                    st.error("An error occurred while generating the response.")
+                    logging.error(f"Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
