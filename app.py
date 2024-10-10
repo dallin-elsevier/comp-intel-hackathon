@@ -16,7 +16,7 @@ from openai import AzureOpenAI
 
 load_dotenv()
 email = os.getenv("EMAIL")
-token = os.getenv("TOKEN")
+confluence_token = os.getenv("CONFLUENCE_TOKEN")
 openai_key = os.getenv("OPENAIKEY")
 azure_endpoint = "https://els-patientpass.openai.azure.com/"
 model = "gpt-4o"
@@ -108,7 +108,7 @@ def append_intel(pages_with_texts):
 
 def get_confluence_content(page_id):
     url = f"https://elsevier.atlassian.net/wiki/api/v2/pages/{page_id}?body-format=export_view"
-    auth = HTTPBasicAuth(email, token)
+    auth = HTTPBasicAuth(email, confluence_token)
     headers = {
       "Accept": "application/json"
     }
@@ -169,7 +169,7 @@ def get_children(page_id, links, depth=0):
 
 def get_confluence_children(page_id):
     url = f"https://elsevier.atlassian.net/wiki/api/v2/pages/{page_id}/children"
-    auth = HTTPBasicAuth(email, token)
+    auth = HTTPBasicAuth(email, confluence_token)
     headers = {
      "Accept": "application/json"
     }
