@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from datetime import datetime
 from llama_index.core.llms import ChatMessage
@@ -9,13 +10,17 @@ import json
 import re
 from bs4 import BeautifulSoup
 from llama_index.llms.ollama import Ollama
-import os
 from dotenv import load_dotenv
 from streamlit_tree_select import tree_select
+from openai import AzureOpenAI
 
 load_dotenv()
 email = os.getenv("EMAIL")
 token = os.getenv("TOKEN")
+openai_key = os.getenv("OPENAIKEY")
+azure_endpoint = "https://els-patientpass.openai.azure.com/"
+model = "gpt-4o"
+version = "0.1.0-openai-confluence-demo"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -29,7 +34,7 @@ if 'real_messages' not in st.session_state:
     st.session_state.real_messages = [{"role": "system", "content": f"You are an analyst who processes given information and makes inferences. Today's date is {"{:%B %d, %Y}".format(datetime.now())}."}]
 
 if 'confluence_page_search' not in st.session_state:
-    st.session_state.confluence_page_search = "119601397530606"
+    st.session_state.confluence_page_search = None
 
 if 'urls_to_add' not in st.session_state:
     st.session_state.urls_to_add = set([])
@@ -37,15 +42,24 @@ if 'urls_to_add' not in st.session_state:
 if 'memoized_confluence_pages' not in st.session_state:
     st.session_state.memoized_confluence_pages = {}
 
-def stream_chat(model, messages):
+def stream_chat(messages):
     try:
-        llm = Ollama(model=model, request_timeout=120.0)
-        resp = llm.stream_chat(messages)
+        client = AzureOpenAI(
+            azure_endpoint=azure_endpoint,
+            api_version="2024-02-01",
+            api_key=openai_key
+        )
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True
+        )
         response = ""
         response_placeholder = st.empty()
-        for r in resp:
-            response += r.delta
-            response_placeholder.write(response)
+        for chunk in resp:
+            if len(chunk.choices) > 0 and chunk.choices[0].delta.content:
+                response += chunk.choices[0].delta.content
+                response_placeholder.write(response)
         logging.info(f"Model: {model}, Messages: {messages}, Response: {response}")
         return response
     except Exception as e:
@@ -80,7 +94,9 @@ def intel_input_change():
         return
     else:
         text_content = extract_text_from_url(intel_url)
-        append_intel([{"url": url, "text": text_content}])
+        append_intel([{"url": intel_url, "text": text_content}])
+        st.session_state.intel_urls.append(intel_url)
+        st.session_state.intel_input_box = ""
 
 def append_intel(pages_with_texts):
     urls = ", ".join([page["url"] for page in pages_with_texts])
@@ -209,20 +225,10 @@ def main():
                 st.markdown(f"- [{page_info['title']}]({page_info['url']})")
                 continue
             st.markdown(f"- {checked_item}")
-
-        #links_in_page = get_links_in_page(page_to_search)
-        #for link in links_in_page:
-            # Show as selected if already in the stack or to be added
-            # selected = link in st.session_state.confluence_page_search_stack or link in st.session_state.confluence_pages_to_add
-            #st.write(link)
         return
 
     st.title("Comp Intel Exchange")
 
-    version = "0.0.2-confluence-demo"
-    #model = "llama3.2:latest"
-    #model = "llama3.1:latest"
-    model = "phi3.5:latest"
     subtitle = f"Version: '{version}'\nModel: '{model}'"
 
     st.code(subtitle)
@@ -250,7 +256,7 @@ def main():
             with st.spinner("Writing..."):
                 try:
                     messages = [ChatMessage(role=msg["role"], content=msg["content"]) for msg in st.session_state.real_messages]
-                    response_message = stream_chat(model, messages)
+                    response_message = stream_chat(messages)
                     duration = time.time() - start_time
                     st.session_state.real_messages.append({"role": "assistant", "content": response_message})
                     st.session_state.user_facing_messages.append({"role": "assistant", "content": response_message})
