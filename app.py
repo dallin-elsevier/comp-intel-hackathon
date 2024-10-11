@@ -19,10 +19,19 @@ email = os.getenv("EMAIL")
 confluence_token = os.getenv("CONFLUENCE_TOKEN")
 openai_key = os.getenv("OPENAIKEY")
 azure_endpoint = "https://els-patientpass.openai.azure.com/"
-model = "gpt-4o"
+gpt4o_model = "gpt-4o"
+models = [
+    gpt4o_model,
+    "llama3.2:latest",
+    "llama3.1:latest",
+    "phi3.5:latest"
+]
 version = "0.1.0-openai-confluence-demo"
 
 logging.basicConfig(level=logging.INFO)
+
+if 'model' not in st.session_state:
+    st.session_state.model = gpt4o_model
 
 if 'intel_urls' not in st.session_state:
     st.session_state.intel_urls = []
@@ -50,7 +59,7 @@ def stream_chat(messages):
             api_key=openai_key
         )
         resp = client.chat.completions.create(
-            model=model,
+            model=gpt4o_model,
             messages=messages,
             stream=True
         )
@@ -60,7 +69,22 @@ def stream_chat(messages):
             if len(chunk.choices) > 0 and chunk.choices[0].delta.content:
                 response += chunk.choices[0].delta.content
                 response_placeholder.write(response)
-        logging.info(f"Model: {model}, Messages: {messages}, Response: {response}")
+        logging.info(f"Model: {gpt4o_model}, Messages: {messages}, Response: {response}")
+        return response
+    except Exception as e:
+        logging.error(f"Error during streaming: {str(e)}")
+        raise e
+
+def stream_chat_ollama(messages):
+    try:
+        llm = Ollama(model=st.session_state.model, request_timeout=120.0)
+        resp = llm.stream_chat(messages)
+        response = ""
+        response_placeholder = st.empty()
+        for r in resp:
+            response += r.delta
+            response_placeholder.write(response)
+        logging.info(f"Model: {st.session_state.model}, Messages: {messages}, Response: {response}")
         return response
     except Exception as e:
         logging.error(f"Error during streaming: {str(e)}")
@@ -229,9 +253,10 @@ def main():
 
     st.title("Comp Intel Exchange")
 
-    subtitle = f"Version: '{version}'\nModel: '{model}'"
+    subtitle = f"Version: '{version}'"
 
     st.code(subtitle)
+    st.selectbox("Model", models, key="model")
 
     st.sidebar.text_input("Copy URLs of Intel Here", key="intel_input_box", on_change=intel_input_change)
     for intel_url in st.session_state.intel_urls:
@@ -256,7 +281,10 @@ def main():
             with st.spinner("Writing..."):
                 try:
                     messages = [ChatMessage(role=msg["role"], content=msg["content"]) for msg in st.session_state.real_messages]
-                    response_message = stream_chat(messages)
+                    if st.session_state.model == gpt4o_model:
+                        response_message = stream_chat(messages)
+                    else:
+                        response_message = stream_chat_ollama(messages)
                     duration = time.time() - start_time
                     st.session_state.real_messages.append({"role": "assistant", "content": response_message})
                     st.session_state.user_facing_messages.append({"role": "assistant", "content": response_message})
