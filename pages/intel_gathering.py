@@ -47,8 +47,9 @@ def show():
                     # Show the plus icon to expand the URL
                     if st.button("➕", key=f"expand_{i}"):
                         # Expand the sublist and insert into the main URL list
-                        sublist = get_sublist(edited_url)
-                        st.session_state['url_list'].extend(sublist)
+                        page_id = context_explorer.extract_confluence_page_id(edited_url)
+                        sublist = context_explorer.get_children(page_id, email, confluence_token)
+                        st.session_state['intel_search_url_list'].extend(sublist)
                         st.session_state['expanded_urls'].add(edited_url)
             elif context_explorer.extract_text_from_url(edited_url) == None:
                 st.write("❌")
@@ -66,7 +67,7 @@ def show():
     # Button to return the final list (simulate returning to another context)
     if st.button("Return List"):
         st.session_state.urls_to_add = filtered_urls
-        st.session_state.confluence_page_search = []
+        st.session_state.confluence_page_search = None
         logging.info(f"URLs: {filtered_urls}")
 
 if __name__ == "__main__":

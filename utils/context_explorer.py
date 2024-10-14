@@ -21,10 +21,8 @@ logging.basicConfig(level=logging.INFO)
 @lru_cache(maxsize=128)
 def extract_confluence_page_id(url):
     try:
-        print(f"I'm trying {url}")
-        pattern = r"https://elsevier\.atlassian\.net/wiki/spaces/\w+/pages/(\d+)/.*"
+        pattern = r"https://elsevier\.atlassian\.net/wiki/spaces/\w+/pages/(\d+)/?.*"
         if match := re.match(pattern, url):
-            print("!!!!!WORKED!!!!!!@")
             return match.group(1)
         return None
     except Exception as e:
@@ -68,7 +66,6 @@ def extract_confluence_intel(page_id, email, confluence_token):
     text = "\n ".join([p.get_text() for p in soup.find_all("p")])
     links = [a["href"] for a in soup.find_all("a", href=True)]
     filtered_links = []
-    # Remove all links that
     for link in links:
         if confluence_page_id := extract_confluence_page_id(link):
             filtered_links.append(link)
@@ -115,6 +112,9 @@ def get_confluence_children(page_id, email, confluence_token):
       auth=auth,
       verify=False
     )
-    links = response.json().get("results", [])
-    print(links)
-    return list(f"https://elsevier.atlassian.net/wiki/spaces/{child["spaceId"]}/pages/{child["id"]}" for child in links)
+    try:
+        links = response.json().get("results", [])
+        return list(f"https://elsevier.atlassian.net/wiki/spaces/{child["spaceId"]}/pages/{child["id"]}" for child in links)
+    except Exception as e:
+#         st.error(f"Error occurred while fetching the children: {e}")
+        return []
