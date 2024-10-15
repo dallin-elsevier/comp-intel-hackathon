@@ -127,6 +127,11 @@ def show():
     st.code(subtitle)
     st.selectbox("Model", models, key="model")
 
+    for url in st.session_state.urls_to_add:
+        pages_with_texts = [{"url": url, "text": context_explorer.extract_text_from_url(url)}]
+        append_intel(pages_with_texts)
+        st.session_state.urls_to_add.remove(url)
+
     st.sidebar.text_input("Copy URLs of Intel Here", key="intel_input_box", on_change=intel_input_change)
     for intel_url in st.session_state.intel_urls:
         st.sidebar.write(intel_url)

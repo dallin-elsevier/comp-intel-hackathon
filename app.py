@@ -18,10 +18,8 @@ def main():
     if 'urls_to_add' not in st.session_state:
         st.session_state.urls_to_add = set([])
 
-    if st.session_state.confluence_page_search:
-        # If we are searching, navigate to intel_gathering
+    if st.session_state.confluence_page_search != None:
         intel_gathering.show()
-        # If not, continue with the chat
     else:
         chat.show()
 

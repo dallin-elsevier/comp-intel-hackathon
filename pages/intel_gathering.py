@@ -5,6 +5,7 @@ from functools import lru_cache
 from dotenv import load_dotenv
 import logging
 import utils.context_explorer as context_explorer
+import pages.chat as chat
 
 load_dotenv()
 email = os.getenv("EMAIL")
@@ -69,6 +70,4 @@ def show():
         st.session_state.urls_to_add = filtered_urls
         st.session_state.confluence_page_search = None
         logging.info(f"URLs: {filtered_urls}")
-
-if __name__ == "__main__":
-    main()
+        st.rerun()

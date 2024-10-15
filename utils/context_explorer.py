@@ -31,6 +31,16 @@ def extract_confluence_page_id(url):
 @lru_cache(maxsize=128)
 def extract_text_from_url(url):
     try:
+        if page_id := extract_confluence_page_id(url):
+            return extract_confluence_intel(page_id, email, confluence_token)["text"]
+        return extract_text_from_non_confluence_url(url)
+    except requests.RequestException as e:
+        st.error(f"Error occurred while scraping the URL: {e}")
+        return None
+
+@lru_cache(maxsize=128)
+def extract_text_from_non_confluence_url(url):
+    try:
         response = requests.get(url)
         if response.status_code != 200:
             st.error(f"Error occurred while scraping the URL: {response.text}")
@@ -116,5 +126,4 @@ def get_confluence_children(page_id, email, confluence_token):
         links = response.json().get("results", [])
         return list(f"https://elsevier.atlassian.net/wiki/spaces/{child["spaceId"]}/pages/{child["id"]}" for child in links)
     except Exception as e:
-#         st.error(f"Error occurred while fetching the children: {e}")
         return []
