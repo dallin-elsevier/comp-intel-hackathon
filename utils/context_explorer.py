@@ -20,22 +20,43 @@ logging.basicConfig(level=logging.INFO)
 
 @lru_cache(maxsize=128)
 def extract_confluence_page_id(url):
+    logging.info(f"Extracting confluence page ID from {url}")
     try:
         pattern = r"https://elsevier\.atlassian\.net/wiki/spaces/\w+/pages/(\d+)/?.*"
+        alt_pattern = r"https://elsevier\.atlassian\.net/wiki/viewpage.action\?pageId=(\d+)/?.*"
         if match := re.match(pattern, url):
+            logging.info(f"Page ID extracted: {match.group(1)}")
             return match.group(1)
+        if match := re.match(alt_pattern, url):
+            logging.info(f"Page ID extracted: {match.group(1)}")
+            return match.group(1)
+        logging.info("Page ID not found")
         return None
     except Exception as e:
         st.error(f"Error occurred while extracting the page ID: {e}")
 
+def get_url_context(url):
+    if page_id := extract_confluence_page_id(url):
+        return extract_confluence_intel(page_id, email, confluence_token)
+    text = extract_text_from_non_confluence_url(url)
+    return {
+        "confluence_id": None,
+        "title": url,
+        "text_preview": f"{text[:100]}..." if text else "(No text retrieved)",
+        "text": text or None,
+    }
+
 @lru_cache(maxsize=128)
 def extract_text_from_url(url):
+    logging.info(f"Extracting text from {url}")
     try:
         if page_id := extract_confluence_page_id(url):
+            logging.info(f"Page ID found: {page_id}")
             return extract_confluence_intel(page_id, email, confluence_token)["text"]
+        logging.info("Page ID not found")
         return extract_text_from_non_confluence_url(url)
     except requests.RequestException as e:
-        st.error(f"Error occurred while scraping the URL: {e}")
+        logging.error(f"Error occurred while scraping the URL: {e}")
         return None
 
 @lru_cache(maxsize=128)
@@ -43,17 +64,18 @@ def extract_text_from_non_confluence_url(url):
     try:
         response = requests.get(url)
         if response.status_code != 200:
-            st.error(f"Error occurred while scraping the URL: {response.text}")
+            logging.error(f"Error occurred while scraping the URL: {response.text}")
             return None
         soup = BeautifulSoup(response.content, "html.parser")
         text_content = " ".join([p.get_text() for p in soup.find_all("p")])
         return text_content
     except requests.RequestException as e:
-        st.error(f"Error occurred while scraping the URL: {e}")
+        logging.error(f"Error occurred while scraping the URL: {e}")
         return None
 
 @lru_cache(maxsize=128)
 def get_confluence_content(page_id, email, confluence_token):
+    logging.info(f"Getting confluence content for {page_id}")
     url = f"https://elsevier.atlassian.net/wiki/api/v2/pages/{page_id}?body-format=export_view"
     auth = HTTPBasicAuth(email, confluence_token)
     headers = {
@@ -66,11 +88,27 @@ def get_confluence_content(page_id, email, confluence_token):
        auth=auth,
        verify=False
     )
+    # If there is an error, log it and return an empty dict
+    if response.status_code != 200:
+        logging.error(f"Error occurred while getting confluence content: {response.text}")
+        return {}
     return response.json()
+
+def conflu_url_from_page_id(page_id):
+    return f"https://elsevier.atlassian.net/wiki/pages/viewpage.action?pageId={page_id}"
 
 @lru_cache(maxsize=128)
 def extract_confluence_intel(page_id, email, confluence_token):
+    logging.info(f"Getting confluence intel for {page_id}")
     content = get_confluence_content(page_id, email, confluence_token)
+    if "body" not in content:
+        return {
+            "title": "Page not found",
+            "url": conflu_url_from_page_id(page_id),
+            "page_id": page_id,
+            "text": "Page not found",
+            "links": []
+        }
     raw_text = content["body"]["export_view"]["value"]
     soup = BeautifulSoup(raw_text, "html.parser")
     text = "\n ".join([p.get_text() for p in soup.find_all("p")])
@@ -85,31 +123,22 @@ def extract_confluence_intel(page_id, email, confluence_token):
             filtered_links.append(link)
     return {
         "title": content["title"],
-        "url": f"https://elsevier.atlassian.net/wiki{content['_links']['webui']}",
-        "page_id": page_id,
+        "confluence_id": page_id,
         "text": text,
-        "links": filtered_links
+        "links": filtered_links,
+        "text_preview": f"{text[:100]}..." if text else "(No text retrieved)",
     }
 
 @lru_cache(maxsize=128)
-def get_confluence_node(page_id, email, confluence_token):
-    page_info = {}
-    page_info = extract_confluence_intel(page_id, email, confluence_token)
-    node = {
-        "label": f"'{page_info["title"]}'",
-        "value": page_info["url"],
-        "text": page_info["text"],
-    }
-    return node
-
-@lru_cache(maxsize=128)
-def get_children(page_id, email, confluence_token):
+def get_child_urls(page_id, email, confluence_token):
+    logging.info(f"Getting children for {page_id}")
     children = get_confluence_children(page_id, email, confluence_token)
     page_links = extract_confluence_intel(page_id, email, confluence_token)["links"]
     return children + page_links
 
 @lru_cache(maxsize=128)
 def get_confluence_children(page_id, email, confluence_token):
+    logging.info(f"Getting confluence children for {page_id}")
     url = f"https://elsevier.atlassian.net/wiki/api/v2/pages/{page_id}/children"
     auth = HTTPBasicAuth(email, confluence_token)
     headers = {
@@ -126,4 +155,6 @@ def get_confluence_children(page_id, email, confluence_token):
         links = response.json().get("results", [])
         return list(f"https://elsevier.atlassian.net/wiki/spaces/{child["spaceId"]}/pages/{child["id"]}" for child in links)
     except Exception as e:
-        return []
+        logging.error(f"Response was not JSON: {response.text}")
+        logging.error(f"Error occurred while getting children for {page_id}: {e}")
+        return list([])

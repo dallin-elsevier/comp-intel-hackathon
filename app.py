@@ -10,6 +10,7 @@ importlib.reload(intel_gathering)
 logging.basicConfig(level=logging.INFO)
 
 def main():
+    st.set_page_config(layout="wide")
     logging.info("App started")
 
     if 'confluence_page_search' not in st.session_state:
@@ -19,8 +20,10 @@ def main():
         st.session_state.urls_to_add = set([])
 
     if st.session_state.confluence_page_search != None:
+        st.empty()
         intel_gathering.show()
     else:
+        st.empty()
         chat.show()
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ models = [
     "llama3.1:latest",
     "phi3.5:latest"
 ]
-version = "0.1.0-openai-confluence-demo"
+version = "0.2.0-halloween-demo"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -65,41 +65,22 @@ def stream_chat_ollama(messages):
         logging.error(f"Error during streaming: {str(e)}")
         raise e
 
-def extract_confluence_page_id(url):
-    try:
-        pattern = r"https://elsevier\.atlassian\.net/wiki/spaces/\w+/pages/(\d+)/.*"
-        if match := re.match(pattern, url):
-            return match.group(1)
-        return None
-    except Exception as e:
-        st.error(f"Error occurred while extracting the page ID: {e}")
-
-def extract_text_from_url(url):
-    try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.content, "html.parser")
-        text_content = " ".join([p.get_text() for p in soup.find_all("p")])
-        return text_content
-    except Exception as e:
-        st.error(f"Error occurred while scraping the URL: {e}")
-        return None
-
 def intel_input_change():
     intel_url = st.session_state.intel_input_box
     logging.info(f"Intel: {intel_url}")
     confluence_page_id = context_explorer.extract_confluence_page_id(intel_url)
     if confluence_page_id:
-        st.session_state.confluence_page_search = confluence_page_id
+        st.session_state.confluence_page_search = intel_url
         return
     else:
-        text_content = extract_text_from_url(intel_url)
+        text_content = context_explorer.extract_text_from_url(intel_url)
         append_intel([{"url": intel_url, "text": text_content}])
         st.session_state.intel_urls.append(intel_url)
         st.session_state.intel_input_box = ""
 
 def append_intel(pages_with_texts):
     urls = ", ".join([page["url"] for page in pages_with_texts])
-    st.session_state.real_messages.append({"role": "user", "content": f"I would like you to brief yourself on information from {urls}. If you understand, please respond with today's date."})
+    st.session_state.real_messages.append({"role": "user", "content": f"I would like you to brief yourself on information from {urls}. When responding, make it clear where the information is coming from and use quotes from the source where necessary. If you understand, please respond with today's date."})
     st.session_state.real_messages.append({"role": "assistant", "content": f"I understand, and today's date is {"{:%B %d, %Y}".format(datetime.now())}."})
     for page in pages_with_texts:
         st.session_state.real_messages.append({"role": "user", "content": f"Information from {page["url"]}:\r\n\r\n{page["text"]}\r\n\r\nRetrieved on {datetime.now()}."})
@@ -127,10 +108,9 @@ def show():
     st.code(subtitle)
     st.selectbox("Model", models, key="model")
 
-    for url in st.session_state.urls_to_add:
-        pages_with_texts = [{"url": url, "text": context_explorer.extract_text_from_url(url)}]
-        append_intel(pages_with_texts)
-        st.session_state.urls_to_add.remove(url)
+    if st.session_state.urls_to_add:
+        append_intel(st.session_state.urls_to_add)
+        st.session_state.urls_to_add.clear()
 
     st.sidebar.text_input("Copy URLs of Intel Here", key="intel_input_box", on_change=intel_input_change)
     for intel_url in st.session_state.intel_urls:
