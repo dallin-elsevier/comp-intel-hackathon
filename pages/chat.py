@@ -22,7 +22,7 @@ models = [
     "llama3.1:latest",
     "phi3.5:latest"
 ]
-version = "0.2.0-halloween-demo"
+version = "0.3.0-styling-updates"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -100,8 +100,6 @@ def show():
 
     if 'real_messages' not in st.session_state:
         st.session_state.real_messages = [{"role": "system", "content": f"You are an analyst who processes given information and makes inferences. Today's date is {"{:%B %d, %Y}".format(datetime.now())}."}]
-
-    st.title("Comp Intel Exchange")
 
     subtitle = f"Version: '{version}'"
 
